@@ -1,1 +1,137 @@
-<!DOCTYPE html>\n<html lang="en">\n<head>\n    <meta charset="UTF-8">\n    <meta name="viewport" content="width=device-width, initial-scale=1.0">\n    <title>Quality Control - Barcode and Label Scanning</title>\n    <script src="https://cdn.rawgit.com/soldair/node-tesseract/gh-pages/tesseract.min.js"></script>\n</head>\n<body>\n    <h1>Barcode and Label Scanning Quality Control Application</h1>\n    <div>\n        <input type="file" id="imageInput" accept="image/*">\n        <button id="scanButton">Scan</button>\n    </div>\n    <div id="result">\n        <h2>Scanning Result:</h2>\n        <p id="outputText"></p>\n    </div>\n    <script>\n        document.getElementById('scanButton').addEventListener('click', function() {\n            const fileInput = document.getElementById('imageInput');\n            if (fileInput.files.length === 0) {\n                alert('Please select an image file first.');\n                return;\n            }\n            const img = fileInput.files[0];\n            Tesseract.recognize(\n                img,\n                'eng',\n                {\n                    logger: info => console.log(info)\n                }\n            ).then(({ data: { text } }) => {\n                document.getElementById('outputText').innerText = text;\n            });\n        });\n    </script>\n</body>\n</html>
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Application de Contrôle Qualité</title>
+    <style>
+        body {
+            background-color: #121212;
+            color: #FFFFFF;
+            font-family: Arial, sans-serif;
+        }
+        h1 {
+            text-align: center;
+        }
+        #video {
+            width: 100%;
+            height: auto;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+        }
+        th, td {
+            border: 1px solid #444;
+            padding: 10px;
+            text-align: left;
+        }
+        th {
+            background-color: #1E1E1E;
+        }
+        .status-good {
+            background-color: #4CAF50;
+        }
+        .status-bad {
+            background-color: #F44336;
+        }
+        button {
+            margin-top: 10px;
+            padding: 10px 20px;
+            background-color: #6200EE;
+            color: white;
+            border: none;
+            border-radius: 5px;
+        }
+    </style>
+</head>
+<body>
+    <h1>Application de Contrôle Qualité</h1>
+    <video id="video" autoplay></video>
+    <button id="startScan">Commencer le Scan</button>
+    <table id="dataTable">
+        <thead>
+            <tr>
+                <th>Code Article</th>
+                <th>Numéro de Lot</th>
+                <th>Désignation</th>
+                <th>Largeur</th>
+                <th>Status</th>
+            </tr>
+        </thead>
+        <tbody>
+        </tbody>
+    </table>
+    <button id="exportCSV">Exporter en CSV</button>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/tesseract.js/2.1.1/tesseract.min.js"></script>
+    <script>
+        const video = document.getElementById('video');
+        const dataTable = document.getElementById('dataTable').getElementsByTagName('tbody')[0];
+        const scans = JSON.parse(localStorage.getItem('scans')) || [];
+        let captureInterval;
+
+        document.getElementById('startScan').onclick = async () => {
+            navigator.mediaDevices.getUserMedia({ video: true })
+                .then(stream => {
+                    video.srcObject = stream;
+                    captureInterval = setInterval(scanBarcode, 3000);
+                })
+                .catch(err => console.error('Erreur d’accès à la caméra: ', err));
+        };
+
+        async function scanBarcode() {
+            const canvas = document.createElement('canvas');
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            canvas.getContext('2d').drawImage(video, 0, 0);
+            const { data: { text } } = await Tesseract.recognize(canvas, 'fr');
+            const barcodeData = extractData(text);
+            if (barcodeData) {
+                scans.push(barcodeData);
+                localStorage.setItem('scans', JSON.stringify(scans));
+                addRowToTable(barcodeData);
+            }
+        }
+
+        function extractData(text) {
+            const lines = text.split('\n');
+            const regex = /Code: (\S+)\s+Lot: (\S+)\s+Désignation: (.+)\s+Largeur: (\S+)/;
+            for (const line of lines) {
+                const match = line.match(regex);
+                if (match) {
+                    return { articleCode: match[1], lotNumber: match[2], designation: match[3], width: match[4], status: 'Bon' };
+                }
+            }
+            return null;
+        }
+
+        function addRowToTable(data) {
+            const newRow = dataTable.insertRow();
+            newRow.insertCell(0).innerText = data.articleCode;
+            newRow.insertCell(1).innerText = data.lotNumber;
+            newRow.insertCell(2).innerText = data.designation;
+            newRow.insertCell(3).innerText = data.width;
+            newRow.insertCell(4).innerText = data.status;
+            newRow.className = data.status === 'Bon' ? 'status-good' : 'status-bad';
+        }
+
+        document.getElementById('exportCSV').onclick = () => {
+            let csvContent = 'data:text/csv;charset=utf-8,';
+            csvContent += 'Code Article,Numéro de Lot,Désignation,Largeur,Status\n';
+            scans.forEach(scan => {
+                csvContent += `${scan.articleCode},${scan.lotNumber},${scan.designation},${scan.width},${scan.status}\n`;
+            });
+            const encodedUri = encodeURI(csvContent);
+            const link = document.createElement('a');
+            link.setAttribute('href', encodedUri);
+            link.setAttribute('download', 'scans.csv');
+            link.click();
+        };
+
+        window.onload = () => {
+            scans.forEach(scan => addRowToTable(scan));
+        };
+    </script>
+</body>
+</html>
